@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	delayKeyfetchMS = 50
+	delayKeyfetchMS = 5
 )
 
 // the way toadlkjflksdjflksfjslkfjslfasdjkflskjfaslfkjaslfjsdlfjdflsflfslfjsdflsdflsflasfslfslfsalfd

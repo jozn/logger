@@ -20,6 +20,7 @@ features = [
     "Win32_System_Threading",
     "Win32_UI_WindowsAndMessaging",
     "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_TextServices",
 ]
 
 # https://github.com/johnthagen/min-sized-rust

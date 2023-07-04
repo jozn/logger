@@ -4,12 +4,79 @@ use std::time::Duration;
 use std::sync::Mutex;
 use std::sync::Arc;
 
-use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState,GetKeyState,ToUnicode,GetKeyboardState};
+use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, GetKeyState, ToUnicode, GetKeyboardState, GetKeyboardLayout};
+use windows::Win32::UI::Input::KeyboardAndMouse::ToUnicodeEx;
 use std::convert::TryFrom;
 use windows::core::PWSTR;
 use windows::core::Result;
+use windows::Win32::System::Threading::GetCurrentThreadId;
+use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
 
 fn main() {
+    loop {
+        for i in 1..256 {
+            let key_code = unsafe { GetAsyncKeyState(i) };
+            if key_code == 0 {
+                continue;
+            }
+            if key_code & (1 << 15) == 0 {
+                continue;
+            }
+
+            let mut keyboard_state = [0u8; 256];
+            let t =  unsafe { GetKeyboardState(&mut keyboard_state) };
+            println!("{:?}",t);
+            println!("{:?}",keyboard_state);
+
+            // let layout = unsafe { GetKeyboardLayout(0) };
+            // let layout = unsafe { GetKeyboardLayout(GetCurrentThreadId()) };
+
+            // First get the handle to the foreground window
+            let foreground_window = unsafe { GetForegroundWindow() };
+
+// Now get the thread id of the foreground window
+//             let thread_id = unsafe { GetWindowThreadProcessId(foreground_window, std::ptr::null_mut()) };
+            let thread_id = unsafe { GetWindowThreadProcessId(foreground_window, None) };
+
+// Finally get the keyboard layout for the foreground thread
+            let layout = unsafe { GetKeyboardLayout(thread_id) };
+
+            let mut pwszbuff = [0u16; 10]; // Create a buffer
+
+            // Use the correct arguments for ToUnicodeEx
+            let code = unsafe {
+                ToUnicodeEx(
+                    i as u32, // Use the key code as `wvirtkey`
+                    0, // `wscancode`, it's usually obtained from a WM_KEYDOWN or WM_KEYUP message.
+                    &keyboard_state,
+                    &mut pwszbuff, // Pass the buffer
+                    0, // `wflags`, always 0 for this usage
+                    layout
+                )
+            };
+
+            println!("typeing {}: {} kb: {:?}", i, code, layout);
+            println!(">>> buff {:?}",  pwszbuff);
+
+            // let code_point: u32 = 1567;
+            let code_point: u32 = pwszbuff[0] as u32;
+            if let Some(character) = char::from_u32(code_point) {
+                // let character = character.to_string();
+                if character.is_control() {
+                    println!("{} is a control character", code_point);
+                } else {
+                    let character_string = character.to_string();
+                    println!("{}", character_string);
+                }
+                // println!(">>> {}", character_string);
+            } else {
+                println!("Invalid Unicode code point: {}", code_point);
+            }
+
+        }
+    }
+}
+fn main1() {
     let mut keycodes = vec![];
     // Iterate from 0 to 255 inclusive
     for i in 0..=255 {
@@ -29,13 +96,39 @@ fn main() {
         println!("VirtualKey {:?}: {}", i, state);
     }
 
+    loop {
+        for i in keycodes.iter() {
+            let key_code = unsafe { GetAsyncKeyState(*i) };
+            if key_code == 0 {
+                continue;
+            }
+            if key_code & (1 << 15) == 0 {
+                continue;
+            }
+
+            let mut keyboard_state = [0u8; 256];
+            let t =  unsafe {GetKeyboardState(&mut keyboard_state)};
+            println!("{:?}",t);
+            println!("{:?}",keyboard_state);
+
+           let layout = unsafe {GetKeyboardLayout(0)};
+
+            let pstr = PWSTR(0 as *mut u16);
+            // let code = unsafe {ToUnicodeEx(key_code as u32, 0, &mut keyboard_state, &pstr, 1, 1, layout)};
+
+            println!("typeing {:?}: {} kb: {:?}", i, key_code, layout);
+        }
+
+
+        thread::sleep(Duration::from_millis(5));
+    }
+
     unsafe {
         let mut keyboard_state = [0u8; 256];
         let t = GetKeyboardState(&mut keyboard_state);
         println!("{:?}",t);
         println!("{:?}",keyboard_state)
     }
-
 
 }
 
