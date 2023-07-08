@@ -256,7 +256,86 @@ fn get_main_key_codes() -> Vec<i32> {
     keycodes
 }
 
+// Reduced list of known major keys
+// https://learn.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
 fn is_known_win_key(win_key1: i32) -> bool {
+    use std::collections::HashSet;
+    use windows::Win32::UI::Input::KeyboardAndMouse::*;
+
+    // let known_keys: HashSet<VIRTUAL_KEY> = [
+    let known_keys:Vec<VIRTUAL_KEY> = vec![
+        // Mouse buttons
+        VK_LBUTTON, // Left mouse button
+        VK_RBUTTON, // Right mouse button
+        VK_MBUTTON, // Middle mouse button (three-button mouse)
+        // Special keys and other buttons
+        VK_BACK,    // BACKSPACE key
+        VK_TAB,     // TAB key
+        VK_RETURN,  // ENTER key
+        VK_SHIFT,   // SHIFT key
+        VK_CONTROL, // CTRL key
+        VK_MENU,    // ALT key
+        VK_PAUSE,   // PAUSE key
+        VK_CAPITAL, // CAPS LOCK key
+        VK_ESCAPE,  // ESC key
+        VK_SPACE,   // SPACEBAR
+        VK_PRIOR,   // PAGE UP key
+        VK_NEXT,    // PAGE DOWN key
+        VK_END,     // END key
+        VK_HOME,    // HOME key
+        VK_LEFT,    // LEFT ARROW key
+        VK_UP,      // UP ARROW key
+        VK_RIGHT,   // RIGHT ARROW key
+        VK_DOWN,    // DOWN ARROW key
+        VK_INSERT,  // INS key
+        VK_DELETE,  // DEL key
+        // Function keys
+        VK_F1,  // F1 key
+        VK_F2,  // F2 key
+        VK_F3,  // F3 key
+        VK_F4,  // F4 key
+        VK_F5,  // F5 key
+        VK_F6,  // F6 key
+        VK_F7,  // F7 key
+        VK_F8,  // F8 key
+        VK_F9,  // F9 key
+        VK_F10, // F10 key
+        VK_F11, // F11 key
+        VK_F12, // F12 key
+        // Other keys
+        VK_NUMLOCK,    // NUM LOCK key
+        VK_SCROLL,     // SCROLL LOCK key
+        VK_LSHIFT,     // Left SHIFT key
+        VK_RSHIFT,     // Right SHIFT key
+        VK_LCONTROL,   // Left CONTROL key
+        VK_RCONTROL,   // Right CONTROL key
+        VK_LMENU,      // Left ALT key
+        VK_RMENU,      // Right ALT key
+        VK_OEM_PLUS,   // '+' key
+        VK_OEM_COMMA,  // ',' key
+        VK_OEM_MINUS,  // '-' key
+        VK_OEM_PERIOD, // '.' key
+        // No available keys
+        VK_SNAPSHOT,
+        VK_PRINT,
+    ];
+    let vk = VIRTUAL_KEY(win_key1 as u16);
+    let control = known_keys.contains(&vk);
+    if !control {
+        return true;
+    }
+
+    let win_key = win_key1 as u8;
+    match win_key as char {
+        '0'..='9' | 'A'..='Z' => true,
+        _ => false,
+    }
+}
+/*
+// Note used as for reference only - includes all keys in windows
+// https://learn.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
+// fn is_known_win_key_full(win_key1: i32) -> bool {
+fn is_known_win_key_full(win_key1: i32) -> bool {
     use std::collections::HashSet;
     use windows::Win32::UI::Input::KeyboardAndMouse::*;
 
@@ -277,7 +356,7 @@ fn is_known_win_key(win_key1: i32) -> bool {
         VK_PAUSE,
         VK_CAPITAL,
         VK_KANA,
-        VK_HANGUEL,
+        // VK_HANGUEL,
         VK_HANGUL,
         VK_IME_ON,
         VK_JUNJA,
@@ -421,83 +500,7 @@ fn is_known_win_key(win_key1: i32) -> bool {
         '0'..='9' | 'A'..='Z' => true,
         _ => false,
     }
-}
-
-fn is_known_win_key_bk3(win_key1: i32) -> bool {
-    use std::collections::HashSet;
-    use windows::Win32::UI::Input::KeyboardAndMouse::*;
-
-    let known_keys: HashSet<VIRTUAL_KEY> = [
-        // Function keys
-        VK_F1,
-        VK_F2,
-        VK_F3,
-        VK_F4,
-        VK_F5,
-        VK_F6,
-        VK_F7,
-        VK_F8,
-        VK_F9,
-        VK_F10,
-        VK_F11,
-        VK_F12,
-        // Number keys '0' to '9'
-        // (b'0' as u16)..=(b'9' as u16),
-
-        // Alphabet keys 'A' to 'Z'
-        // (b'A' as u16)..=(b'Z' as u16),
-
-        // Other keys
-        VK_ADD,
-        VK_SUBTRACT,
-        VK_DIVIDE,
-        VK_MULTIPLY,
-        VK_SPACE,
-        VK_LCONTROL,
-        VK_RCONTROL,
-        VK_LSHIFT,
-        VK_RSHIFT,
-        VK_LMENU,
-        VK_RMENU,
-        VK_LWIN,
-        VK_RWIN,
-        VK_RETURN,
-        VK_ESCAPE,
-        VK_UP,
-        VK_DOWN,
-        VK_LEFT,
-        VK_RIGHT,
-        VK_BACK,
-        VK_CAPITAL,
-        VK_TAB,
-        VK_HOME,
-        VK_END,
-        VK_PRIOR,
-        VK_NEXT,
-        VK_INSERT,
-        VK_DELETE,
-        VK_OEM_3,
-        VK_OEM_MINUS,
-        VK_OEM_PLUS,
-        VK_OEM_4,
-        VK_OEM_6,
-        VK_OEM_5,
-        VK_OEM_1,
-        VK_OEM_7,
-        VK_OEM_COMMA,
-        VK_OEM_PERIOD,
-        VK_OEM_2,
-    ]
-    .iter()
-    .cloned()
-    .flatten()
-    .map(VIRTUAL_KEY)
-    .collect();
-
-    let win_key = VIRTUAL_KEY(win_key1 as u16);
-
-    known_keys.contains(&win_key)
-}
+}*/
 
 fn is_known_win_key_2(win_key1: i32) -> bool {
     use windows::Win32::UI::Input::KeyboardAndMouse::*;
