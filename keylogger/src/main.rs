@@ -9,6 +9,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
+use inputbot::KeybdKey::Numpad0Key;
 use windows::core::Result;
 use windows::core::PWSTR;
 use windows::Win32::System::Threading::GetCurrentThreadId;
@@ -31,6 +32,8 @@ struct Key {
 }
 
 fn main() {
+    unsafe { windows::Win32::System::Console::FreeConsole() };
+
     let (tx1, rx1) = channel::<Key>();
     let (tx2, rx2) = channel::<Key>();
 
@@ -150,7 +153,7 @@ fn get_next(keycodes: &[i32]) -> Key {
     let thread_id = unsafe { GetWindowThreadProcessId(foreground_window, None) };
     let layout = unsafe { GetKeyboardLayout(thread_id) };
     let mut pwszbuff = [0u16; 1]; // Create a buffer
-                                  // Use the correct arguments for ToUnicodeEx
+    // Use the correct arguments for ToUnicodeEx
     let code = unsafe {
         ToUnicodeEx(
             next as u32, // Use the key code as `wvirtkey`
@@ -234,9 +237,9 @@ fn is_known_win_key(win_key1: i32) -> bool {
 
     let known_keys: Vec<VIRTUAL_KEY> = vec![
         // Mouse buttons
-        VK_LBUTTON, // Left mouse button
-        VK_RBUTTON, // Right mouse button
-        VK_MBUTTON, // Middle mouse button (three-button mouse)
+        // VK_LBUTTON, // Left mouse button
+        // VK_RBUTTON, // Right mouse button
+        // VK_MBUTTON, // Middle mouse button (three-button mouse)
         // Special keys and other buttons
         VK_BACK,    // BACKSPACE key
         VK_TAB,     // TAB key
@@ -284,6 +287,26 @@ fn is_known_win_key(win_key1: i32) -> bool {
         VK_OEM_COMMA,  // ',' key
         VK_OEM_MINUS,  // '-' key
         VK_OEM_PERIOD, // '.' key
+        // Oem keys - todo
+        VK_OEM_1, //
+        VK_OEM_2, //
+        VK_OEM_3, //
+        VK_OEM_4, //
+        VK_OEM_6, //
+        VK_OEM_7, //
+        VK_OEM_8, //
+        VK_OEM_102, //
+        // Numbers
+        VK_NUMPAD0,
+        VK_NUMPAD1,
+        VK_NUMPAD2,
+        VK_NUMPAD3,
+        VK_NUMPAD4,
+        VK_NUMPAD5,
+        VK_NUMPAD6,
+        VK_NUMPAD7,
+        VK_NUMPAD8,
+        VK_NUMPAD9,
         // No available keys
         VK_SNAPSHOT,
         VK_PRINT,

