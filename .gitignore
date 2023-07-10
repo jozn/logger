@@ -6,3 +6,5 @@
 /mother/target
 mother/src/*.exe
 mother/src/*.jpg
+mother/.idea
+mother/*.jpg
