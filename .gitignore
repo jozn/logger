@@ -3,3 +3,6 @@
 *.txt
 /_bk
 /keylogger/target
+/mother/target
+mother/src/*.exe
+mother/src/*.jpg
