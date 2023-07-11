@@ -9,3 +9,4 @@ mother/src/*.jpg
 mother/.idea
 mother/*.jpg
 mother/app_icon.ico
+/printer/target
